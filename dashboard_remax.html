@@ -806,7 +806,7 @@
 <script>
 // ─── CONFIG ────────────────────────────────────────────────────────────────
 
-const SHEET_URL = 'https://script.google.com/macros/s/AKfycbz9_ADzTA13u7j4WA3gtLo5o4eoBtjZsrSlg0GAwkrh9NH6uEx5HSyiR-KLKoxVadNLaA/exec';
+const SHEET_URL = 'https://script.google.com/macros/s/AKfycbwyYuqcJZ9BQrz7J5jkq-MdRWG1LSronII8-2CAhh7T_w-0c2oAcVlHKEhM-POgbUAJZQ/exec';
 
 // Usuarios: "oficina" es admin. Agentes usan su nombre (case insensitive) como usuario.
 // Contraseña universal (podés cambiarla aquí):
@@ -822,6 +822,33 @@ let reservasTable_page = 1;
 const PAGE_SIZE = 20;
 let filteredReservas = [];
 let adminTab = 'resumen';
+
+// ─── JSONP HELPER ─────────────────────────────────────────────────────────
+function fetchJSONP(url) {
+  return new Promise((resolve, reject) => {
+    const cbName = 'cb_' + Math.random().toString(36).substr(2, 9);
+    const script = document.createElement('script');
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(new Error('Timeout al conectar con el Sheet.'));
+    }, 15000);
+
+    function cleanup() {
+      clearTimeout(timeout);
+      delete window[cbName];
+      if (script.parentNode) script.parentNode.removeChild(script);
+    }
+
+    window[cbName] = function(data) {
+      cleanup();
+      resolve(data);
+    };
+
+    script.src = url + '?callback=' + cbName;
+    script.onerror = () => { cleanup(); reject(new Error('No se pudo cargar el script. Verificá que el Apps Script esté publicado con acceso "Cualquier persona".')); };
+    document.head.appendChild(script);
+  });
+}
 
 // ─── INIT ────────────────────────────────────────────────────────────────
 document.getElementById('btn-login').addEventListener('click', handleLogin);
@@ -849,15 +876,8 @@ async function handleLogin() {
   showLoading();
 
   try {
-    const res = await fetch(SHEET_URL, { redirect: 'follow', method: 'GET' });
-    const text = await res.text();
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch(e) {
-      throw new Error('La respuesta del script no es JSON válido. Verificá que el script esté publicado correctamente.');
-    }
-    if (!Array.isArray(data)) throw new Error('Formato inesperado: ' + JSON.stringify(data).substring(0, 100));
+    const data = await fetchJSONP(SHEET_URL);
+    if (!Array.isArray(data)) throw new Error('Formato inesperado del Sheet.');
     allData = data;
 
     if (username.toLowerCase() === ADMIN_USER) {
@@ -880,7 +900,7 @@ async function handleLogin() {
     showApp();
   } catch (err) {
     showLogin();
-    errEl.textContent = 'Error al cargar datos. Verificá la conexión.';
+    errEl.textContent = 'Error: ' + (err.message || 'No se pudo conectar con el Sheet. Verificá que el script esté publicado como Web App con acceso "Cualquier persona".');
     errEl.style.display = 'block';
   }
 }
